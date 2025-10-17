@@ -5,13 +5,15 @@ import streamlit as st
 from PIL import Image
 
 # -----------------------------
-# Constants and simple scoring
+# App config
 # -----------------------------
-
 st.set_page_config(page_title="TriChoice (Educational): TriClip vs TTVR", layout="wide")
 st.title("TriChoice — Tricuspid Repair vs Replacement (Educational)")
 st.caption("For education & Heart Team planning discussion only — **not** clinical decision support.")
 
+# -----------------------------
+# Sidebar: structured inputs
+# -----------------------------
 with st.sidebar:
     st.header("Clinical context")
     etiology = st.selectbox("TR etiology", ["Secondary (functional)", "Primary (degenerative)", "CIED lead-related", "Mixed/uncertain"])
@@ -21,11 +23,10 @@ with st.sidebar:
     cied_lead = st.selectbox("CIED lead crossing TV", ["No", "Yes — not impinging", "Yes — impinging / causal"])
     surgical_risk = st.selectbox("Surgical risk", ["Intermediate", "High", "Prohibitive"])
     organ_dysf = st.multiselect("End-organ dysfunction (select all that apply)", ["Hepatic congestion/cirrhosis", "Renal insufficiency/failure", "Cachexia/malnutrition"])
-    st.markdown("---")
 
+    st.markdown("---")
     st.header("GLIDE inputs (TEE-based)")
-    # We model GLIDE as five binary 'unfavorable' flags (1 point each)
-    # GLIDE: G (septolateral gap), L (jet location), I (image quality), D (chordal density), E (en-face jet morphology)
+    # GLIDE: five 'unfavorable' flags (1 point each)
     gap = st.selectbox("Septolateral coaptation gap", ["Favorable (small/moderate)", "Unfavorable (large)"])
     loc = st.selectbox("TR jet location", ["Favorable (central)", "Unfavorable (commissural/off-axis/multiple)"])
     imgq = st.selectbox("TEE image quality for grasping view", ["Good/Excellent", "Suboptimal/Shadowing"])
@@ -37,15 +38,15 @@ with st.sidebar:
     up = st.file_uploader("Upload TEE/TTE screenshot (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
 # -----------------------------
-# Compute GLIDE
+# GLIDE computation
 # -----------------------------
-def point(x): return 1 if "Unfavorable" in x or x in ["Suboptimal/Shadowing",
-                                                      "High/dense (tethered/subvalvular crowding)",
-                                                      "Diffuse/multi-jet"] else 0
+def point(x):
+    return 1 if "Unfavorable" in x or x in ["Suboptimal/Shadowing",
+                                            "High/dense (tethered/subvalvular crowding)",
+                                            "Diffuse/multi-jet"] else 0
 
 glide = point(gap) + point(loc) + point(imgq) + point(density) + point(enface)
 
-# Map GLIDE to repair feasibility buckets (per JACC CV Imaging paper)
 if glide <= 1:
     repair_bucket = "High likelihood of successful T‑TEER (GLIDE 0–1)"
 elif 2 <= glide <= 3:
@@ -64,49 +65,44 @@ def recommend(glide, rv_function, ph_status, tr_severity, cied_lead):
     - GLIDE ≥4 → Replacement favored (TTVR) if anatomy suitable and RV can tolerate afterload change;
                  consider futility if end-stage RV/organ failure.
     """
-    # Defaults
     choice = "Borderline — Heart Team review"
     reasons = []
 
-    # Convenience flags
     severe_rv = (rv_function == "Severely impaired")
     severe_ph = (ph_status == "Severe/pre-capillary")
     torrential = (tr_severity == "Torrential")
     lead_imping = (cied_lead == "Yes — impinging / causal")
 
     if glide <= 1:
-        # Repair-leaning
         choice = "Repair favored (TriClip — T‑TEER)"
-        reasons.append("GLIDE 0–1 associated with >90% acute T‑TEER success. [1](https://www.scholars.northwestern.edu/en/publications/glide-score-scoring-system-for-prediction-of-procedural-success-i)")
+        reasons.append("GLIDE 0–1 is associated with a high probability of acute T‑TEER success (JACC CV Imaging 2024).")
         if severe_ph or severe_rv:
-            reasons.append("However, severe PH or end-stage RV dysfunction may indicate limited benefit/futility; still consider repair for incremental reduction. [4](https://www.frontiersin.org/journals/cardiovascular-medicine/articles/10.3389/fcvm.2024.1447411/full)[10](https://academic.oup.com/eurheartjsupp/article/27/Supplement_3/iii162/8114533)")
+            reasons.append("Severe PH or end‑stage RV dysfunction may limit benefit; consider futility even if repair‑leaning.")
         if lead_imping:
-            reasons.append("CIED lead interaction requires strategy (work around vs lead management). [3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)")
+            reasons.append("CIED lead interaction requires strategy (work‑around vs lead management).")
 
     elif glide >= 4:
-        # Replacement-leaning
         choice = "Replacement favored (TTVR)"
-        reasons.append("GLIDE ≥4 predicts low probability of T‑TEER success; consider TTVR if anatomy suitable. [1](https://www.scholars.northwestern.edu/en/publications/glide-score-scoring-system-for-prediction-of-procedural-success-i)")
+        reasons.append("GLIDE ≥4 predicts low probability of T‑TEER success; consider TTVR if anatomy is suitable.")
         if severe_rv:
-            reasons.append("Beware RV afterload mismatch and higher risk of RV failure/pacemaker need after TTVR. [3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)[5](https://www.acc.org/latest-in-cardiology/articles/2024/10/24/19/43/sun-215pm-tricuspid-valve-treatments-tct-2024)")
+            reasons.append("Beware RV afterload mismatch and potential need for pacing after TTVR; assess RV tolerance carefully.")
         if lead_imping:
-            reasons.append("Assess lead management before TTVR to avoid lead entrapment. [3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)")
+            reasons.append("Plan lead management before TTVR to avoid lead entrapment.")
 
     else:
-        # GLIDE 2–3: nuanced
         choice = "Borderline — Heart Team review"
-        reasons.append("GLIDE 2–3 = intermediate T‑TEER success; use RV function, PH, TR extent, and lead status to choose. [3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)")
+        reasons.append("GLIDE 2–3 = intermediate T‑TEER success; use RV function, PH, TR extent, and lead status to choose.")
         if not (severe_rv or severe_ph) and not torrential:
-            reasons.append("If RV is preserved and PH not severe, a stepwise **repair** may be preferred for safety and gradated reduction. [3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)")
+            reasons.append("If RV is preserved and PH not severe, a stepwise repair may be preferred for safety and incremental reduction.")
         if torrential or lead_imping:
-            reasons.append("If TR is torrential or anatomy/lead unfavorable for grasping, **replacement** may provide more reliable elimination of TR. [3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)")
+            reasons.append("If TR is torrential or anatomy/lead unfavorable for grasping, replacement may provide more reliable elimination of TR.")
 
     return choice, reasons
 
 choice, reasons = recommend(glide, rv_function, ph_status, tr_severity, cied_lead)
 
 # -----------------------------
-# Display
+# Layout & output
 # -----------------------------
 col1, col2 = st.columns([1,1])
 
@@ -115,26 +111,33 @@ with col1:
     st.metric(label="GLIDE (0–5)", value=str(glide), delta=repair_bucket)
     st.markdown(
         "- **GLIDE components (1 point each if unfavorable):** Gap, Location, Image quality, chordal **D**ensity, **E**n‑face TR morphology. "
-        "Higher scores predict lower chance of acute T‑TEER success. [1](https://www.scholars.northwestern.edu/en/publications/glide-score-scoring-system-for-prediction-of-procedural-success-i)"
+        "Higher scores predict lower chance of acute T‑TEER success."
     )
 
     st.subheader("Suggested therapy direction (educational)")
-    st.success(choice) if "Repair" in choice else st.warning(choice) if "Borderline" in choice else st.error(choice)
+    # ✅ FIX: use if/elif/else instead of ternary to avoid Streamlit magic auto-print error
+    if "Repair" in choice:
+        st.success(choice)
+    elif "Borderline" in choice:
+        st.warning(choice)
+    else:
+        st.error(choice)
+
     st.markdown("\n".join([f"- {r}" for r in reasons]))
 
     st.markdown("---")
     st.markdown("**Key evidence and indications (context):**")
     st.write(
-        "• **TriClip (T‑TEER)** FDA‑approved; improves QoL; TR reduction to ≤moderate in ~89% at 1 year in TRILUMINATE; indicated for symptomatic severe TR at ≥intermediate surgical risk when T‑TEER expected to reduce TR to ≤moderate. "
-        "[11](https://www.fda.gov/medical-devices/recently-approved-devices/triclip-g4-system-p230007)[5](https://www.acc.org/latest-in-cardiology/articles/2024/10/24/19/43/sun-215pm-tricuspid-valve-treatments-tct-2024)[6](https://www.accessdata.fda.gov/cdrh_docs/pdf23/P230007B.pdf)"
+        "• **TriClip (T‑TEER)**: FDA‑approved; improves QoL; many patients achieve TR ≤ moderate at 1 year (TRILUMINATE). "
+        "Indicated for symptomatic severe TR at ≥ intermediate surgical risk when T‑TEER is expected to reduce TR to ≤ moderate."
     )
     st.write(
-        "• **TTVR (EVOQUE)** randomized data (TRISCEND II) show sustained TR elimination with QoL benefit but higher pacemaker/RV‑failure risks than repair—consider in anatomies unfavorable for T‑TEER. "
-        "[5](https://www.acc.org/latest-in-cardiology/articles/2024/10/24/19/43/sun-215pm-tricuspid-valve-treatments-tct-2024)[3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)"
+        "• **TTVR (e.g., EVOQUE)**: randomized data show sustained TR elimination with QoL benefit but higher pacemaker/RV‑failure risks than repair—"
+        "consider in anatomies unfavorable for T‑TEER."
     )
     st.write(
-        "• Therapy choice should integrate **RV function, PH, anatomy, and leads**; lean to **repair** for incremental reduction with lower pacing risk, and to **replacement** for refractory/torrential TR or difficult leaflet grasping. "
-        "[3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)[4](https://www.frontiersin.org/journals/cardiovascular-medicine/articles/10.3389/fcvm.2024.1447411/full)"
+        "• Selection should integrate **RV function, PH, anatomy, and leads**; lean to **repair** for incremental reduction with lower pacing risk, "
+        "and to **replacement** for refractory/torrential TR or difficult leaflet grasping."
     )
 
 with col2:
@@ -164,19 +167,21 @@ report = f"""
 - Image quality: {imgq}
 - Chordal density: {density}
 - En-face TR morphology: {enface}
-**GLIDE total:** {glide}  → {repair_bucket}  (JACC CV Imaging 2024)  [GLIDE] citeturn5search40
+
+**GLIDE total:** {glide}  → {repair_bucket}
 
 ## Suggested therapy direction (educational)
 **{choice}**  
 {chr(10).join(['- ' + r for r in reasons])}
 
-## Notes & citations
-- TriClip (T-TEER) SSED/Indications and TRILUMINATE outcomes; EVOQUE/TTVR TRISCEND II one‑year outcomes. [6](https://www.accessdata.fda.gov/cdrh_docs/pdf23/P230007B.pdf)[11](https://www.fda.gov/medical-devices/recently-approved-devices/triclip-g4-system-p230007)[5](https://www.acc.org/latest-in-cardiology/articles/2024/10/24/19/43/sun-215pm-tricuspid-valve-treatments-tct-2024)
-- Therapy selection framework (T‑TEER vs TTVR): anatomy, RV, PH, leads, and risks. [3](https://citoday.com/articles/2024-sept-oct/t-teer-versus-ttvr-considerations-for-transcatheter-tricuspid-valve-therapy-choice)
-- Broader evidence & reviews of TTVI: safety, QoL impact, RV assessment importance. [4](https://www.frontiersin.org/journals/cardiovascular-medicine/articles/10.3389/fcvm.2024.1447411/full)
+## Notes
+- GLIDE: 5-component anatomic score predicting T‑TEER success (JACC CV Imaging 2024).
+- TriClip (T‑TEER) & TTVR evidence indicate different tradeoffs (QoL benefit with both; pacing/RV risks higher after TTVR).
+- Therapy choice should always be individualized by the Heart Team based on imaging, anatomy, RV/PH status, and device IFU.
 
-> This document is for **education and planning discussion** only. Always rely on device IFU/labeling, contemporary guidelines/consensus, and real-time Heart Team assessment.
+> This document is for **education and planning discussion** only. Always rely on device IFU/labeling, contemporary guidance, and real-time Heart Team assessment.
 """
-st.download_button("Download report (.md)", report, file_name="TriChoice_report.md")
+# Assign to _ to avoid auto-printing the return value
+_ = st.download_button("Download report (.md)", report, file_name="TriChoice_report.md")
 
 st.caption("© 2025 — Educational prototype")
